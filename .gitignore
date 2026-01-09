@@ -1,4 +1,6 @@
+# =========================
 # Python
+# =========================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -9,32 +11,38 @@ venv/
 ENV/
 .venv
 
-# Model files (can be large)
+# =========================
+# Model files (artifacts)
+# =========================
 model/*.pkl
 model/*.pkl.gz
 
-# Data files
-data/
-*.csv
+# =========================
+# Data files (DVC-managed)
+# =========================
+data/*.csv          # ignore raw datasets
+!data/*.csv.dvc     # allow DVC metadata files
 
+# =========================
+# DVC internal cache
+# =========================
+.dvc/cache
+
+# =========================
 # IDE
+# =========================
 .vscode/
 .idea/
 *.swp
 *.swo
 
+# =========================
 # OS
+# =========================
 .DS_Store
 Thumbs.db
 
+# =========================
 # Logs
+# =========================
 *.log
-# Ignore raw datasets
-data/*.csv
-
-# Allow DVC metadata
-!data/*.csv.dvc
-
-# DVC internal files
-.dvc/cache
-
