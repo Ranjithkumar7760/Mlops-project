@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: spam-ml-api
+  labels:
+    app: spam
 spec:
   replicas: 2
   selector:
@@ -13,7 +15,20 @@ spec:
         app: spam
     spec:
       containers:
-      - name: spam-api
-        image: IMAGE_PLACEHOLDER
-        ports:
-        - containerPort: 8000
+        - name: spam-api
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
