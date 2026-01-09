@@ -20,24 +20,30 @@ env:
   ECR_REPO_NAME: ${{ secrets.ECR_REPO_NAME }}
   EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
   MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
-  IMAGE_TAG: latest
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   build-train-deploy:
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout
+    # =========================================================
+    # 1️⃣ Checkout Source Code
+    # =========================================================
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2️⃣ Python
+    # =========================================================
+    # 2️⃣ Setup Python
+    # =========================================================
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.10"
 
-    # 3️⃣ AWS credentials (MUST be before DVC)
+    # =========================================================
+    # 3️⃣ Configure AWS Credentials (REQUIRED for DVC + ECR + EKS)
+    # =========================================================
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -45,61 +51,83 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_REGION }}
 
-    # 4️⃣ Install deps + DVC pull
+    # =========================================================
+    # 4️⃣ Install Dependencies & Pull Dataset using DVC
+    # =========================================================
     - name: Install dependencies and pull dataset
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        pip install "dvc[s3]"
 
-        echo "Pulling dataset via DVC..."
+        echo "Pulling dataset from DVC remote..."
         dvc pull
 
         echo "Dataset contents:"
         ls -lh data
 
-    # 5️⃣ Train / Retrain model
+    # =========================================================
+    # 5️⃣ Train / Retrain Model (QUALITY GATE INSIDE train.py)
+    # =========================================================
     - name: Train model with MLflow
       env:
         MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
       run: |
         python training/train.py
 
-    # 6️⃣ Login ECR
+    # =========================================================
+    # 6️⃣ Login to Amazon ECR
+    # =========================================================
     - name: Login to Amazon ECR
       run: |
         aws ecr get-login-password --region $AWS_REGION | \
         docker login --username AWS --password-stdin \
         $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-    # 7️⃣ Build & Push image
+    # =========================================================
+    # 7️⃣ Build & Push Docker Image (IMMUTABLE IMAGE)
+    # =========================================================
     - name: Build and push Docker image
       run: |
         ECR_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
-        docker build -t spam-mlops .
-        docker tag spam-mlops:latest $ECR_URI:$IMAGE_TAG
+
+        docker build -t spam-mlops:$IMAGE_TAG .
+        docker tag spam-mlops:$IMAGE_TAG $ECR_URI:$IMAGE_TAG
         docker push $ECR_URI:$IMAGE_TAG
 
-    # 8️⃣ Update K8s manifest
+    # =========================================================
+    # 8️⃣ Update Kubernetes Manifest with New Image
+    # =========================================================
     - name: Update Kubernetes manifest
       run: |
         ECR_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
         sed -i "s|IMAGE_PLACEHOLDER|$ECR_URI:$IMAGE_TAG|g" k8s/deployment.yaml
 
-    # 9️⃣ kubectl
+    # =========================================================
+    # 9️⃣ Setup kubectl
+    # =========================================================
     - name: Setup kubectl
       uses: azure/setup-kubectl@v4
       with:
         version: "v1.29.0"
 
-    # 🔟 kubeconfig
+    # =========================================================
+    # 🔟 Update kubeconfig
+    # =========================================================
     - name: Update kubeconfig
       run: |
         aws eks update-kubeconfig \
           --name $EKS_CLUSTER_NAME \
           --region $AWS_REGION
 
-    # 1️⃣1️⃣ Deploy
+    # =========================================================
+    # 1️⃣1️⃣ Deploy & FORCE ROLLOUT (CRITICAL)
+    # =========================================================
     - name: Deploy to EKS
       run: |
         kubectl apply -f k8s/deployment.yaml
         kubectl apply -f k8s/service.yaml
+
+        echo "Forcing rollout to load new model..."
+        kubectl rollout restart deployment spam-ml-api
+        kubectl rollout status deployment spam-ml-api
