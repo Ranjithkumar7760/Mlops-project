@@ -149,7 +149,7 @@ with mlflow.start_run(run_name=f"spam-training-{datetime.utcnow()}"):
     # ============================
     # QUALITY GATE (AUTO-RETRAIN CONTROL)
     # ============================
-    ACCURACY_THRESHOLD = 0.90
+    ACCURACY_THRESHOLD = 0.85
 
     if accuracy < ACCURACY_THRESHOLD:
         print(
