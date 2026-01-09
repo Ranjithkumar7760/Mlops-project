@@ -1,0 +1,16 @@
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pandas>=2.2.0
+scikit-learn>=1.4.0
+joblib>=1.3.0
+pydantic>=2.5.0
+fastapi
+uvicorn
+scikit-learn
+pandas
+joblib
+mlflow
+dvc[s3]
+prometheus-client
+
+
