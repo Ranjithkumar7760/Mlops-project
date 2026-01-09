@@ -29,4 +29,12 @@ Thumbs.db
 
 # Logs
 *.log
+# Ignore raw datasets
+data/*.csv
+
+# Allow DVC metadata
+!data/*.csv.dvc
+
+# DVC internal files
+.dvc/cache
 
