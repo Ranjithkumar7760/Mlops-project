@@ -35,7 +35,7 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 # ============================
 MLFLOW_TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI",
-    "http://<MLFLOW_EC2_IP>:5000"   # Replace with MLflow EC2 IP or use CodeBuild env var
+    "http://54.198.145.6:5000"   # Replace with MLflow EC2 IP or use CodeBuild env var
 )
 
 EXPERIMENT_NAME = "SMS-Spam-Detection"

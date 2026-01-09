@@ -12,5 +12,6 @@ joblib
 mlflow
 dvc[s3]
 prometheus-client
+dvc[s3]
 
 
