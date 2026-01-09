@@ -1,0 +1,125 @@
+name: MLOps CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "data/**"
+      - "training/**"
+      - "app/**"
+      - "Dockerfile"
+      - "requirements.txt"
+      - "k8s/**"
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REPO_NAME: ${{ secrets.ECR_REPO_NAME }}
+  EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+  MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+  IMAGE_TAG: latest
+
+jobs:
+  build-train-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # -------------------------
+    # 1. Checkout code
+    # -------------------------
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # -------------------------
+    # 2. Setup Python
+    # -------------------------
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.10"
+
+    # -------------------------
+    # 3. Install dependencies
+    # -------------------------
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Pull dataset using DVC
+      run: |
+        pip install dvc[s3]
+        dvc pull
+
+
+    # -------------------------
+    # 4. Train / Retrain Model
+    # -------------------------
+    - name: Train model with MLflow
+      env:
+        MLFLOW_TRACKING_URI: ${{ secrets.MLFLOW_TRACKING_URI }}
+      run: |
+        python training/train.py
+
+    # -------------------------
+    # 5. Configure AWS Credentials
+    # -------------------------
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # -------------------------
+    # 6. Login to Amazon ECR
+    # -------------------------
+    - name: Login to Amazon ECR
+      run: |
+        aws ecr get-login-password --region $AWS_REGION | \
+        docker login --username AWS --password-stdin \
+        $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+    # -------------------------
+    # 7. Build & Push Docker Image
+    # -------------------------
+    - name: Build and push Docker image
+      run: |
+        ECR_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
+        docker build -t spam-mlops .
+        docker tag spam-mlops:latest $ECR_URI:$IMAGE_TAG
+        docker push $ECR_URI:$IMAGE_TAG
+
+    # -------------------------
+    # 8. Update K8s manifest
+    # -------------------------
+    - name: Update Kubernetes manifest
+      run: |
+        ECR_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO_NAME
+        sed -i "s|IMAGE_PLACEHOLDER|$ECR_URI:$IMAGE_TAG|g" k8s/deployment.yaml
+
+    # -------------------------
+    # 9. Setup kubectl
+    # -------------------------
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v4
+      with:
+        version: "v1.29.0"
+
+    # -------------------------
+    # 10. Update kubeconfig
+    # -------------------------
+    - name: Update kubeconfig
+      run: |
+        aws eks update-kubeconfig \
+          --name $EKS_CLUSTER_NAME \
+          --region $AWS_REGION
+
+    # -------------------------
+    # 11. Deploy to EKS
+    # -------------------------
+    - name: Deploy to EKS
+      run: |
+        kubectl apply -f k8s/deployment.yaml
+        kubectl apply -f k8s/service.yaml

@@ -1,0 +1,16 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - pip install -r requirements.txt
+  pre_build:
+    commands:
+      - dvc pull
+      - python training/validate_data.py
+  build:
+    commands:
+      - python training/train.py
+      - docker build -t spam-mlops .
+      - docker tag spam-mlops $ECR_URI
+      - docker push $ECR_URI
